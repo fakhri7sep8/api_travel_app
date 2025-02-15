@@ -45,10 +45,21 @@ exports.verify = (req, res) => {
 
 exports.login = (req, res) => {
   const { email, password } = req.body;
+
   db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
-    if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ message: "Email atau password salah" });
+    if (!user) return res.status(400).json({ message: "Email atau password salah" });
+    
+    console.log("Password input:", password);
+    console.log("Password DB:", user.password);
+
+    // Bandingkan password yang diinput dengan password yang tersimpan
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Email atau password salah" });
+
     if (!user.isVerif) return res.status(400).json({ message: "Akun belum diverifikasi" });
+
     const token = jwt.sign({ id: user.id, email: user.email }, SECRET_KEY, { expiresIn: "1h" });
+
     res.json({ status: "success", message: "Login berhasil", data: user, token });
   });
 };
@@ -57,16 +68,17 @@ const crypto = require("crypto"); // Tambahkan ini di atas
 
 exports.forgotPassword = (req, res) => {
   const { email } = req.body;
+
   db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
     if (!user) return res.status(400).json({ message: "Email tidak ditemukan" });
 
-    // Buat password baru secara acak
-    const newPassword = crypto.randomBytes(3).toString("hex").slice(0, 5);
-
-
+    // Buat password baru secara acak (5 karakter)
+    const newPassword = crypto.randomBytes(3).toString("hex");
 
     // Hash password sebelum disimpan
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log("New Password:", newPassword);
+    console.log("Hashed Password:", hashedPassword);
 
     // Simpan password baru ke database
     db.run("UPDATE users SET password = ? WHERE email = ?", [hashedPassword, email], (updateErr) => {
@@ -80,7 +92,7 @@ exports.forgotPassword = (req, res) => {
         text: `Password baru Anda adalah: ${newPassword}`,
       };
 
-      transporter.sendMail(mailOptions, (mailErr, info) => {
+      transporter.sendMail(mailOptions, (mailErr) => {
         if (mailErr) return res.status(500).json({ message: "Gagal mengirim email" });
 
         res.json({ message: "Password baru telah dikirim ke email Anda" });
